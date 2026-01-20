@@ -1,0 +1,38 @@
+{
+  "nb_points_per_interface": 3,
+  "fc_from_test": 4.08,
+  "fc_stone": 65.6,
+  "fc_beam": 6560,
+  "flt_from_test": 0.96,
+  "flt_h": 40,
+  "alpha": 1,
+  "beta": 0.33333,
+  "ratio_strength_beam": 100,
+  "mu": 1.0,
+  "mu_interface": 1.0,
+  "mu_beam": 1.0,
+  "Density_stone": 2688,
+  "Density_mortar": 1800,
+  "Emodulus_stone": 16900,
+  "Emodulus_mortar": 323,
+  "Emodulus_beam": 16900,
+  "beam_ground_element_center_to_interface": 0.01,
+  "Wall_height": 0.9,
+  "Wall_diagonal": 0.9,
+  "Sample_points_radius_to_D": 0.01,
+  "Force_ground_beam_by_x": true,
+  "wall_plane_zs": [
+    0,
+    0.2
+  ],
+  "wall_plane_ys": [
+    0,
+    0.9
+  ],
+  "wall_plane_xs": [
+    0,
+    0.9
+  ],
+  "wall_file": "/wall/../mortar.ply",
+  "stones_dir": "/3d/tri/"
+}
