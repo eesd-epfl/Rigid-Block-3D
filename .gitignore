@@ -1,0 +1,15 @@
+# Ignore data directory
+/data/
+
+# Ignore result directory
+/result/
+
+# Ignore Python virtual environment
+/venv/
+
+/src/
+
+/software/workspaces/
+/software/src/workspaces/
+
+

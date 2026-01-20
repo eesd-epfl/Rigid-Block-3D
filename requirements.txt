@@ -1,0 +1,15 @@
+pandas
+open3d
+matplotlib
+opencv-python-headless
+tqdm
+fury
+pyevtk
+mosek
+numba
+trimesh
+pyvoro
+scikit-image
+rtree
+pymeshlab
+gmsh
