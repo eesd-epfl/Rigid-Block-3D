@@ -62,3 +62,6 @@ Install fTetWild by following the [instruction](https://github.com/wildmeshing/f
 
 
 # Usage
+```bash
+streamlit run ./software/src/app.py
+```
