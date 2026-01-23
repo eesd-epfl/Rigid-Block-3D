@@ -13,3 +13,9 @@ scikit-image
 rtree
 pymeshlab
 gmsh
+streamlit
+numpy-stl
+meshio
+pyvista
+vtk
+stpyvista
