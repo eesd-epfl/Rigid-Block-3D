@@ -1,9 +1,11 @@
 # Rigid Block Modeling for Pushover Analysis of Stone Masonry Walls
-![gallery](./img/group.png)
+<img src="./img/group.png" alt="gallery" width="600">
 
 
-Wang, Q., Beyer, K. 
-A 3D microscale modeling method for nonlinear static analysis of stone masonry walls using mathematical programming
+Q Wang, K Beyer. 
+A 3D microscale modeling method for nonlinear static analysis of stone masonry walls using mathematical programming.
+Engineering Structures.
+2026
 ```bash
 @article{Wang_2026, 
 title={A 3D microscale modeling method for nonlinear static analysis of stone masonry walls using mathematical programming}, volume={350}, 
@@ -65,3 +67,6 @@ Install fTetWild by following the [instruction](https://github.com/wildmeshing/f
 ```bash
 streamlit run ./software/src/app.py
 ```
+
+## Graphic Interface Instruction
+![interface](./img/interface_instruction.png)
