@@ -141,29 +141,116 @@ def render(refresh_token: int = 0):
         
         # === GEOMETRY PARAMETERS ===
         #with st.expander("📐 Wall Geometry", expanded=True):
-            
+
         # Wall dimensions and center
-        st.write("**Wall**")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            wall_dim_x = st.number_input("Wall size X (m)", value=get_value('wall_dim_x', 0.015), step=0.1, format="%.3f", key="wall_x")
-        with col2:
-            wall_dim_y = st.number_input("Wall size Y (m)", value=get_value('wall_dim_y', 0.05), step=0.1, format="%.3f", key="wall_y")
-        with col3:
-            wall_dim_z = st.number_input("Wall size Z (m)", value=get_value('wall_dim_z', 0.1), step=0.1, format="%.3f", key="wall_z")
+        st.write("**Wall Dimensions**")
+
+        # Method selection for wall dimensions
+        wall_dim_method = st.radio(
+            "Dimension method",
+            options=["Manual", "Auto: Bounding Box", "Auto: Barycenter (Y/Z)"],
+            horizontal=True,
+            key="wall_dim_method",
+            help="Manual: enter dimensions manually. Bounding Box: derive from stone bounding box. Barycenter: X from bounding box, Y/Z from stone centroids."
+        )
+
+        # Initialize wall dimensions and center
+        wall_dim_x = get_value('wall_dim_x', 0.015)
+        wall_dim_y = get_value('wall_dim_y', 0.05)
+        wall_dim_z = get_value('wall_dim_z', 0.1)
+        # Default center (will be overridden for auto methods)
+        derived_wall_center = None
+
+        if wall_dim_method == "Manual":
+            # Manual input
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                wall_dim_x = st.number_input("Wall size X (m)", value=get_value('wall_dim_x', 0.015), step=0.001, format="%.3f", key="wall_x")
+            with col2:
+                wall_dim_y = st.number_input("Wall size Y (m)", value=get_value('wall_dim_y', 0.05), step=0.001, format="%.3f", key="wall_y")
+            with col3:
+                wall_dim_z = st.number_input("Wall size Z (m)", value=get_value('wall_dim_z', 0.1), step=0.001, format="%.3f", key="wall_z")
+
+        else:
+            # Auto-derive from stones
+            if not stone_files:
+                st.warning("Upload stone files to auto-derive wall dimensions")
+            else:
+                # Save stone files temporarily to compute dimensions
+                import tempfile
+                temp_stone_dir = tempfile.mkdtemp()
+                temp_stone_paths = []
+                for stone_file in stone_files:
+                    temp_path = os.path.join(temp_stone_dir, stone_file.name)
+                    with open(temp_path, 'wb') as f:
+                        f.write(stone_file.getvalue())
+                    temp_stone_paths.append(temp_path)
+
+                try:
+                    from analysis.model_generation import compute_wall_dimensions_from_stones
+
+                    if wall_dim_method == "Auto: Bounding Box":
+                        method = "bounding_box"
+                        method_desc = "All dimensions from stone bounding box"
+                    else:  # Auto: Barycenter (Y/Z)
+                        method = "barycenter_yz"
+                        method_desc = "X from bounding box, Y/Z from stone centroids"
+
+                    (wall_dim_x, wall_dim_y, wall_dim_z), (center_x, center_y, center_z) = compute_wall_dimensions_from_stones(
+                        stone_mesh_paths=temp_stone_paths,
+                        stone_transforms=stone_transforms,
+                        method=method
+                    )
+                    derived_wall_center = (center_x, center_y, center_z)
+
+                    # Display derived dimensions
+                    st.success(f"**Derived Wall Dimensions** ({method_desc})")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Dim X (m)", f"{wall_dim_x:.4f}")
+                    with col2:
+                        st.metric("Dim Y (m)", f"{wall_dim_y:.4f}")
+                    with col3:
+                        st.metric("Dim Z (m)", f"{wall_dim_z:.4f}")
+
+                    # Display derived center
+                    st.info("**Derived Wall Center**")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Center X (m)", f"{center_x:.4f}")
+                    with col2:
+                        st.metric("Center Y (m)", f"{center_y:.4f}")
+                    with col3:
+                        st.metric("Center Z (m)", f"{center_z:.4f}")
+
+                except Exception as e:
+                    st.error(f"Error computing dimensions: {str(e)}")
+                    # Fall back to defaults
+                    wall_dim_x = get_value('wall_dim_x', 0.015)
+                    wall_dim_y = get_value('wall_dim_y', 0.05)
+                    wall_dim_z = get_value('wall_dim_z', 0.1)
+
+                finally:
+                    # Cleanup temp files
+                    import shutil
+                    shutil.rmtree(temp_stone_dir, ignore_errors=True)
+
         st.session_state.wall_dim_x = wall_dim_x
         st.session_state.wall_dim_y = wall_dim_y
         st.session_state.wall_dim_z = wall_dim_z
-            
+
         #process to get beam and ground dimensions
         # =========================
         # Auto-derive geometry
         # =========================
-        # Coordinate convention: wall box spans
-        #   x in [0, wall_dim_x], y in [0, wall_dim_y], z in [0, wall_dim_z]
-        wall_center_x = wall_dim_x / 2.0
-        wall_center_y = wall_dim_y / 2.0
-        wall_center_z = wall_dim_z / 2.0
+        # Use derived center if available, otherwise compute from dimensions
+        if derived_wall_center is not None:
+            wall_center_x, wall_center_y, wall_center_z = derived_wall_center
+        else:
+            # Manual mode: center is at half dimensions (wall starts at origin)
+            wall_center_x = wall_dim_x / 2.0
+            wall_center_y = wall_dim_y / 2.0
+            wall_center_z = wall_dim_z / 2.0
 
         # Beam and ground: same cross-section as wall, thin in X
         # (matches your previous pattern: beam_dim_z and ground_dim_z = 0.1)

@@ -215,6 +215,182 @@ def compute_global_min_after_rotation(
     return tuple(global_min)
 
 
+def compute_stones_bounding_box(
+    stone_mesh_paths: List[str],
+    stone_transforms: Optional[Dict[str, dict]] = None
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """
+    Compute the overall bounding box of all stones after applying all transforms
+    (rotation, auto-translate to origin, custom translation).
+
+    Args:
+        stone_mesh_paths: List of paths to stone mesh files
+        stone_transforms: Optional dict mapping stone filename to transform settings
+
+    Returns:
+        Tuple of ((min_x, min_y, min_z), (max_x, max_y, max_z))
+    """
+    # First pass: compute global min after rotation (needed for auto-translate)
+    auto_translate_offset = None
+    if stone_transforms:
+        any_auto_origin = any(
+            t.get('auto_origin', False)
+            for t in stone_transforms.values()
+        )
+        if any_auto_origin:
+            global_min_after_rot = compute_global_min_after_rotation(stone_mesh_paths, stone_transforms)
+            auto_translate_offset = (-global_min_after_rot[0], -global_min_after_rot[1], -global_min_after_rot[2])
+
+    # Second pass: apply all transforms and compute bounding box
+    global_min = [float('inf'), float('inf'), float('inf')]
+    global_max = [float('-inf'), float('-inf'), float('-inf')]
+
+    for stone_path in stone_mesh_paths:
+        if not os.path.exists(stone_path):
+            continue
+
+        ms = pymeshlab.MeshSet()
+        ms.load_new_mesh(stone_path)
+
+        stone_filename = os.path.basename(stone_path)
+        if stone_transforms and stone_filename in stone_transforms:
+            transform = stone_transforms[stone_filename]
+
+            # Step 1: Apply rotation
+            rotation_deg = transform.get('rotation', (0, 0, 0))
+            apply_rotation_to_mesh(ms, rotation_deg)
+
+            # Step 2: Apply auto-translate to origin (if enabled for this stone)
+            if transform.get('auto_origin', False) and auto_translate_offset is not None:
+                apply_translation_to_mesh(ms, auto_translate_offset)
+
+            # Step 3: Apply custom translation
+            custom_translation = transform.get('translation', (0, 0, 0))
+            apply_translation_to_mesh(ms, custom_translation)
+
+        # Update global bounds
+        bb = ms.current_mesh().bounding_box()
+        min_coords = bb.min()
+        max_coords = bb.max()
+        for i in range(3):
+            global_min[i] = min(global_min[i], min_coords[i])
+            global_max[i] = max(global_max[i], max_coords[i])
+
+    return (tuple(global_min), tuple(global_max))
+
+
+def compute_wall_dimensions_from_stones(
+    stone_mesh_paths: List[str],
+    stone_transforms: Optional[Dict[str, dict]] = None,
+    method: str = "bounding_box"
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """
+    Compute wall dimensions and center from stone meshes.
+
+    Args:
+        stone_mesh_paths: List of paths to stone mesh files
+        stone_transforms: Optional dict mapping stone filename to transform settings
+        method: Method to use:
+            - "bounding_box": Use bounding box of all stones for all dimensions and center
+            - "barycenter_yz": Use bounding box for X, barycenter bounds for Y and Z;
+                               Center: X from vertex bbox center, Y/Z from barycenter bbox center
+
+    Returns:
+        Tuple of ((wall_dim_x, wall_dim_y, wall_dim_z), (wall_center_x, wall_center_y, wall_center_z))
+    """
+    if not stone_mesh_paths:
+        return ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    # Compute overall bounding box
+    global_min, global_max = compute_stones_bounding_box(stone_mesh_paths, stone_transforms)
+
+    # Vertex bounding box center
+    vertex_center_x = (global_min[0] + global_max[0]) / 2.0
+    vertex_center_y = (global_min[1] + global_max[1]) / 2.0
+    vertex_center_z = (global_min[2] + global_max[2]) / 2.0
+
+    if method == "bounding_box":
+        # Option 1: All dimensions and center from bounding box
+        wall_dim_x = global_max[0] - global_min[0]
+        wall_dim_y = global_max[1] - global_min[1]
+        wall_dim_z = global_max[2] - global_min[2]
+
+        wall_center_x = vertex_center_x
+        wall_center_y = vertex_center_y
+        wall_center_z = vertex_center_z
+
+    elif method == "barycenter_yz":
+        # Option 2: X from bounding box, Y and Z from barycenter bounds
+        # Center: X from vertex bbox, Y/Z from barycenter bbox
+        wall_dim_x = global_max[0] - global_min[0]
+
+        # First, compute auto-translate offset (needed for transforms)
+        auto_translate_offset = None
+        if stone_transforms:
+            any_auto_origin = any(
+                t.get('auto_origin', False)
+                for t in stone_transforms.values()
+            )
+            if any_auto_origin:
+                global_min_after_rot = compute_global_min_after_rotation(stone_mesh_paths, stone_transforms)
+                auto_translate_offset = (-global_min_after_rot[0], -global_min_after_rot[1], -global_min_after_rot[2])
+
+        # Compute barycenters of all stones after applying all transforms
+        barycenters = []
+        for stone_path in stone_mesh_paths:
+            if not os.path.exists(stone_path):
+                continue
+
+            ms = pymeshlab.MeshSet()
+            ms.load_new_mesh(stone_path)
+
+            stone_filename = os.path.basename(stone_path)
+            if stone_transforms and stone_filename in stone_transforms:
+                transform = stone_transforms[stone_filename]
+
+                # Step 1: Apply rotation
+                rotation_deg = transform.get('rotation', (0, 0, 0))
+                apply_rotation_to_mesh(ms, rotation_deg)
+
+                # Step 2: Apply auto-translate to origin (if enabled for this stone)
+                if transform.get('auto_origin', False) and auto_translate_offset is not None:
+                    apply_translation_to_mesh(ms, auto_translate_offset)
+
+                # Step 3: Apply custom translation
+                custom_translation = transform.get('translation', (0, 0, 0))
+                apply_translation_to_mesh(ms, custom_translation)
+
+            # Compute barycenter after all transforms
+            bb = ms.current_mesh().bounding_box()
+            center = bb.center()
+            barycenters.append(center)
+
+        if barycenters:
+            # Compute bounding box of barycenters
+            bary_min_y = min(c[1] for c in barycenters)
+            bary_max_y = max(c[1] for c in barycenters)
+            bary_min_z = min(c[2] for c in barycenters)
+            bary_max_z = max(c[2] for c in barycenters)
+
+            wall_dim_y = bary_max_y - bary_min_y
+            wall_dim_z = bary_max_z - bary_min_z
+
+            # Center: X from vertex bbox, Y/Z from barycenter bbox
+            wall_center_x = vertex_center_x
+            wall_center_y = (bary_min_y + bary_max_y) / 2.0
+            wall_center_z = (bary_min_z + bary_max_z) / 2.0
+        else:
+            wall_dim_y = global_max[1] - global_min[1]
+            wall_dim_z = global_max[2] - global_min[2]
+            wall_center_x = vertex_center_x
+            wall_center_y = vertex_center_y
+            wall_center_z = vertex_center_z
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    return ((wall_dim_x, wall_dim_y, wall_dim_z), (wall_center_x, wall_center_y, wall_center_z))
+
+
 def preprocess_stone_mesh(
     mesh_path: str,
     rotation_deg: Tuple[float, float, float] = (0, 0, 0),
