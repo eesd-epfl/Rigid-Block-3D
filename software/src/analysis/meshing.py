@@ -128,7 +128,6 @@ def process_mortar_tetrahedralization(
     command = [
         floattetwild_bin,
         "-l", str(edge_length),
-        "--coarsen",
         "--stop-energy", str(stop_energy),
         "--input", input_ply_path,
         "-o", output_base
