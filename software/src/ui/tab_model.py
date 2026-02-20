@@ -275,10 +275,10 @@ def render(refresh_token: int = 0):
         ground_center_y = wall_center_y
         ground_center_z = wall_center_z
 
-        # Planes/bounds used by util_meshing.py (it uses wall_plane_xs/ys/zs as bounds)
-        wall_plane_xs = [wall_center_x-wall_dim_x*0.5, wall_center_x+wall_dim_x*0.5]
-        wall_plane_ys = [wall_center_y-wall_dim_y*0.5, wall_center_y+wall_dim_y*0.5]
-        wall_plane_zs = [wall_center_z-wall_dim_z*0.5, wall_center_z+wall_dim_z*0.5]
+        # # Planes/bounds used by util_meshing.py (it uses wall_plane_xs/ys/zs as bounds)
+        # wall_plane_xs = [wall_center_x-wall_dim_x*0.5, wall_center_x+wall_dim_x*0.5]
+        # wall_plane_ys = [wall_center_y-wall_dim_y*0.5, wall_center_y+wall_dim_y*0.5]
+        # wall_plane_zs = [wall_center_z-wall_dim_z*0.5, wall_center_z+wall_dim_z*0.5]
 
         # Also needed by util_meshing.py:
         Wall_height = wall_dim_x       # util_meshing treats "height" along X
@@ -530,49 +530,49 @@ def render(refresh_token: int = 0):
                     st.code(traceback.format_exc())
 
 
-def create_material_json(
-    nb_points_per_interface,
-    fc_from_test, fc_stone, fc_beam,
-    flt_from_test, flt_h,
-    alpha, beta, ratio_strength_beam,
-    mu, mu_interface, mu_beam,
-    density_stone, density_mortar,
-    emodulus_stone, emodulus_mortar, emodulus_beam,
-    beam_ground_element_center_to_interface,
-    wall_height, wall_diagonal,
-    sample_points_radius_to_D,
-    force_ground_beam_by_x,
-    wall_plane_xs, wall_plane_ys, wall_plane_zs
-):
-    """Create material.json configuration for contact generation"""
+# def create_material_json(
+#     nb_points_per_interface,
+#     fc_from_test, fc_stone, fc_beam,
+#     flt_from_test, flt_h,
+#     alpha, beta, ratio_strength_beam,
+#     mu, mu_interface, mu_beam,
+#     density_stone, density_mortar,
+#     emodulus_stone, emodulus_mortar, emodulus_beam,
+#     beam_ground_element_center_to_interface,
+#     wall_height, wall_diagonal,
+#     sample_points_radius_to_D,
+#     force_ground_beam_by_x,
+#     wall_plane_xs, wall_plane_ys, wall_plane_zs
+# ):
+#     """Create material.json configuration for contact generation"""
     
-    return {
-        "nb_points_per_interface": nb_points_per_interface,
-        "fc_from_test": fc_from_test,
-        "fc_stone": fc_stone,
-        "fc_beam": fc_beam,
-        "flt_from_test": flt_from_test,
-        "flt_h": flt_h,
-        "alpha": alpha,
-        "beta": beta,
-        "ratio_strength_beam": ratio_strength_beam,
-        "mu": mu,
-        "mu_interface": mu_interface,
-        "mu_beam": mu_beam,
-        "Density_stone": density_stone,
-        "Density_mortar": density_mortar,
-        "Emodulus_stone": emodulus_stone,
-        "Emodulus_mortar": emodulus_mortar,
-        "Emodulus_beam": emodulus_beam,
-        "beam_ground_element_center_to_interface": beam_ground_element_center_to_interface,
-        "Wall_height": wall_height,
-        "Wall_diagonal": wall_diagonal,
-        "Sample_points_radius_to_D": sample_points_radius_to_D,
-        "Force_ground_beam_by_x": force_ground_beam_by_x,
-        "wall_plane_xs": wall_plane_xs,
-        "wall_plane_ys": wall_plane_ys,
-        "wall_plane_zs": wall_plane_zs
-    }
+#     return {
+#         "nb_points_per_interface": nb_points_per_interface,
+#         "fc_from_test": fc_from_test,
+#         "fc_stone": fc_stone,
+#         "fc_beam": fc_beam,
+#         "flt_from_test": flt_from_test,
+#         "flt_h": flt_h,
+#         "alpha": alpha,
+#         "beta": beta,
+#         "ratio_strength_beam": ratio_strength_beam,
+#         "mu": mu,
+#         "mu_interface": mu_interface,
+#         "mu_beam": mu_beam,
+#         "Density_stone": density_stone,
+#         "Density_mortar": density_mortar,
+#         "Emodulus_stone": emodulus_stone,
+#         "Emodulus_mortar": emodulus_mortar,
+#         "Emodulus_beam": emodulus_beam,
+#         "beam_ground_element_center_to_interface": beam_ground_element_center_to_interface,
+#         "Wall_height": wall_height,
+#         "Wall_diagonal": wall_diagonal,
+#         "Sample_points_radius_to_D": sample_points_radius_to_D,
+#         "Force_ground_beam_by_x": force_ground_beam_by_x,
+#         "wall_plane_xs": wall_plane_xs,
+#         "wall_plane_ys": wall_plane_ys,
+#         "wall_plane_zs": wall_plane_zs
+#     }
 
 
 def create_geometry_json(

@@ -160,13 +160,13 @@ def render(refresh_token: int = 0):
         
         #st.divider()
         
-        # # === ADVANCED OPTIONS ===
-        # #with st.expander("⚙️ Advanced Options", expanded=False):
-        # enable_coarsen = st.checkbox(
-        #     "Enable Mesh Coarsening",
-        #     value=False,
-        #     help="Allows the mesher to remove unnecessary elements, reducing mesh size and improving performance."
-        # )
+        # === ADVANCED OPTIONS ===
+        #with st.expander("⚙️ Advanced Options", expanded=False):
+        enable_coarsen = st.checkbox(
+            "Enable Mesh Coarsening",
+            value=False,
+            help="Coarsen the output as much as possible."
+        )
         
         #st.caption("💡 Recommended: Keep this enabled unless you have specific requirements.")
     
@@ -302,13 +302,23 @@ def render(refresh_token: int = 0):
             progress_bar.progress(20)
             
             # Build command
-            command = [
-                floattetwild_bin,
-                "-l", str(edge_length),
-                "--stop-energy", str(stop_energy),
-                "--input", input_mesh,
-                "-o", output_path
-            ]
+            if not enable_coarsen:
+                command = [
+                    floattetwild_bin,
+                    "-l", str(edge_length),
+                    "--stop-energy", str(stop_energy),
+                    "--input", input_mesh,
+                    "-o", output_path
+                ]
+            else:
+                command = [
+                    floattetwild_bin,
+                    "-l", str(edge_length),
+                    "--coarsen",
+                    "--stop-energy", str(stop_energy),
+                    "--input", input_mesh,
+                    "-o", output_path
+                ]
             
             log_lines = []
             log_lines.append("=" * 60)

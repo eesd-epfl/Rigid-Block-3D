@@ -19,3 +19,4 @@ pyvista
 vtk
 stpyvista
 numpy
+plyfile

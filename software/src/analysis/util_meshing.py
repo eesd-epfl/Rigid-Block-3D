@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 import trimesh
+from trimesh.voxel import creation
 import gmsh
 from tqdm import tqdm
 import json
@@ -12,10 +13,12 @@ import sys
 import os
 import pymeshlab
 from pymeshlab import PureValue
+import scipy
 from scipy.spatial import KDTree
+from sklearn.decomposition import PCA
 import csv
 import pandas as pd
-
+from plyfile import PlyData, PlyElement
 def generate_rigid_block_model(material_json_path, mortar_ply_path, stones_dir, mortar_msh_path, output_dir, boundary_string="double_bending"):
     """
     Generate rigid block model for limit analysis
@@ -93,7 +96,7 @@ def generate_rigid_block_model(material_json_path, mortar_ply_path, stones_dir, 
     G_f2_beam = float(material_json["G_f2_beam"])
     G_c_beam  = float(material_json["G_c_beam"])
     
-    beam_ground_element_center_to_interface = float(material_json['beam_ground_element_center_to_interface'])
+    #beam_ground_element_center_to_interface = float(material_json['beam_ground_element_center_to_interface'])
     FAKE_thickness = 0.001#m
     
     mortar_to_mortar_property = {"contact_type":"friction_fc_cohesion","cohesion":cohesion_m_m_interface*1e6,\
@@ -142,10 +145,7 @@ def generate_rigid_block_model(material_json_path, mortar_ply_path, stones_dir, 
     max_x = np.max(wall_mesh.vertices[:,0])
     min_x = np.min(wall_mesh.vertices[:,0])
     height_in_mesh = max_x - min_x
-    if Force_scaling:
-        scale_factor = Wall_height/height_in_mesh
-    else:
-        scale_factor = 1
+    scale_factor = 1
     
     Density = {"stone":float(material_json['Density_stone'])*9.81,"mortar":float(material_json['Density_mortar'])*9.81}#N/m^3
     Sample_points_radius = Wall_diagonal*Sample_points_radius_to_D/scale_factor#m
@@ -527,6 +527,378 @@ def generate_rigid_block_model(material_json_path, mortar_ply_path, stones_dir, 
     print(f"Successfully generated point_mortar.csv and element.csv in {output_dir}")
 
 
+def generate_ss_contact(material_json_path, stones_dir, output_dir, voxelize_pitch = 0.002):
+    np.random.seed(315)
+    scale_factor=1
+    # read material_json.json
+    with open(material_json_path) as json_file:
+        material_json = json.load(json_file)
+
+    stone_neiborhood_radius = 0.2#!need to be dynamic
+    existing_points = pd.read_csv(os.path.join(output_dir, "point_mortar.csv"))
+    contact_point_id = int(existing_points['id'].max())+1
+    face_id = int(existing_points['face_id'].max())+1
+    nb_points_per_intersection = int(material_json['nb_points_per_interface'])
+
+    # Stone
+    fc_stone = float(material_json['fc_stone'])#MPa
+    mu_ss = float(material_json['mu_stone_stone'])#MPa
+    cohesion_ss = float(material_json['cohesion_stone_stone'])#MPa
+    E_stone = float(material_json['Emodulus_stone'])#MPa
+    lambda_stone = float(material_json["lambda_stone"])
+    G_f1_stone = 0
+    G_f2_stone = 0
+    G_c_stone  = float(material_json["G_c_stone"])
+
+    stone_to_stone_property = {"contact_type":"friction_fc_cohesion","cohesion":cohesion_ss*1e6,"mu":mu_ss,"fc":fc_stone*1e6,\
+                            "ft":0,"E":E_stone*1e6,"Gf1":G_f1_stone*1e3,"Gf2":G_f2_stone*1e3,\
+                                "Gc":G_c_stone*1e3,"lambda":lambda_stone}
+
+
+    def voxelize_mesh(mesh,radius,voxel_center,pitch):
+        #print("Generating voxelization with radius: ",radius," pitch: ",pitch," voxel_center: ",voxel_center)
+        stone_voxel = creation.local_voxelize(mesh,voxel_center,pitch,radius,fill=True)
+        return stone_voxel.matrix
+
+    def occ2points(coordinates):
+        points  = []
+        len = coordinates.shape[0]
+        for i in range(len):
+            points.append(np.array([round(coordinates[i,0]),round(coordinates[i,1]),round(coordinates[i,2])]))
+
+        return np.array(points)
+
+
+    def generate_faces(points):
+        corners = np.zeros((8*len(points),3))
+        faces = np.zeros((6*len(points),4))
+        for index in range(len(points)):
+            corners[index*8]= np.array([points[index,0]-0.5, points[index,1]-0.5, points[index,2]-0.5])
+            corners[index*8+1]= np.array([points[index,0]+0.5, points[index,1]-0.5, points[index,2]-0.5])
+            corners[index*8+2]= np.array([points[index,0]-0.5, points[index,1]+0.5, points[index,2]-0.5])
+            corners[index*8+3]= np.array([points[index,0]+0.5, points[index,1]+0.5, points[index,2]-0.5])
+            corners[index*8+4]= np.array([points[index,0]-0.5, points[index,1]-0.5, points[index,2]+0.5])
+            corners[index*8+5]= np.array([points[index,0]+0.5, points[index,1]-0.5, points[index,2]+0.5])
+            corners[index*8+6]= np.array([points[index,0]-0.5, points[index,1]+0.5, points[index,2]+0.5])
+            corners[index*8+7]= np.array([points[index,0]+0.5, points[index,1]+0.5, points[index,2]+0.5])
+            base=len(points)+8*index
+            faces[index*6]= np.array([base+2, base+3,base+1,base+0])
+            faces[index*6+1]= np.array([base+4, base+5, base+7,base+6])
+            faces[index*6+2]= np.array([base+3, base+2, base+6,base+7])
+            faces[index*6+3]= np.array([base+0, base+1, base+5,base+4])
+            faces[index*6+4]= np.array([base+2, base+0,base+4,base+6])
+            faces[index*6+5]= np.array([base+1, base+3,base+7,base+5])
+        
+        return corners, faces
+    
+    def write_ply(points, face_data, filename, text=True):
+
+        points = [(points[i,0], points[i,1], points[i,2]) for i in range(points.shape[0])]
+
+        vertex = np.array(points, dtype=[('x', 'f4'), ('y', 'f4'),('z', 'f4')])
+
+        face = np.empty(len(face_data),dtype=[('vertex_indices', 'i4', (4,))])
+        face['vertex_indices'] = face_data
+
+        ply_faces = PlyElement.describe(face, 'face')
+        ply_vertexs = PlyElement.describe(vertex, 'vertex', comments=['vertices'])
+        PlyData([ply_vertexs, ply_faces], text=text).write(filename)
+
+    
+    def writeocc(coordinates,save_path,filename,pitch = 1):
+        points = occ2points(coordinates/pitch)
+        #remove duplicate points
+        points = np.unique(points,axis=0)
+
+        #print(points.shape)
+        corners, faces = generate_faces(points)
+        if points.shape[0] == 0:
+            print('the predicted mesh has zero point!')
+        else:
+            points = np.concatenate((points,corners),axis=0)
+            write_ply(points, faces, os.path.join(save_path,filename))
+    def get_overlap_points(mesh1,mesh2,plot_voxel=False,voxelize_pitch = 0.001):
+        """
+        Get the overlap points between two meshes
+        """
+        #get the origin of voxelization
+        bbox_min = np.min(np.vstack((mesh1.bounds[0],mesh2.bounds[0])),axis=0)
+        bbox_max = np.max(np.vstack((mesh1.bounds[1],mesh2.bounds[1])),axis=0)
+        voxel_center = (bbox_min+bbox_max)/2
+        pitch = voxelize_pitch
+        radius = int(np.max(bbox_max-bbox_min)/2/pitch)
+        #voxelize the two meshes
+        stone_matrix_1 = voxelize_mesh(mesh1,radius,voxel_center,pitch)
+        stone_matrix_2 = voxelize_mesh(mesh2,radius,voxel_center,pitch)
+        #get the overlap points
+        overlap_points = np.argwhere(np.logical_and(stone_matrix_1,stone_matrix_2))
+        #convert the overlap points to the coordinates
+        overlap_points = voxel_center + (overlap_points - np.array([stone_matrix_1.shape[0]/2,stone_matrix_1.shape[1]/2,stone_matrix_1.shape[2]/2]))*pitch
+        #plot
+        if plot_voxel:
+            # save voxel
+            coordinates = np.argwhere(stone_matrix_1!=0)
+            coordinates=coordinates- np.array([stone_matrix_1.shape[0]/2,stone_matrix_1.shape[1]/2,stone_matrix_1.shape[2]/2])
+            coordinates = coordinates*pitch+voxel_center
+            result_dir="."
+            writeocc(coordinates,result_dir,f'voxelization_stone_matrix_1.ply',\
+                        pitch = pitch)
+            # save voxel
+            coordinates = np.argwhere(stone_matrix_2!=0)
+            coordinates=coordinates- np.array([stone_matrix_1.shape[0]/2,stone_matrix_1.shape[1]/2,stone_matrix_1.shape[2]/2])
+            coordinates = coordinates*pitch+voxel_center
+            result_dir="."
+            writeocc(coordinates,result_dir,f'voxelization_stone_matrix_2.ply',\
+                        pitch = pitch)
+            # save voxel
+            coordinates = overlap_points
+            result_dir="."
+            writeocc(coordinates,result_dir,f'voxelization_ovelap.ply',\
+                        pitch = pitch)
+        
+        return overlap_points
+
+    def write_points_as_ply(points, filename,normal=None):
+        """
+        Write points to a ply file
+        """
+        with open(filename, 'w+') as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write("element vertex "+str(points.shape[0])+"\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            if normal is not None:
+                f.write("property float nx\n")
+                f.write("property float ny\n")
+                f.write("property float nz\n")
+            f.write("end_header\n")
+            for point in points:
+                if normal is not None:
+                    f.write(str(point[0])+" "+str(point[1])+" "+str(point[2])+" "+str(normal[0])+" "+str(normal[1])+" "+str(normal[2])+"\n")
+                else:
+                    f.write(str(point[0])+" "+str(point[1])+" "+str(point[2])+"\n")
+    def get_largest_triangle_points(points,nb_iterations = 100):
+        """select three points that form the largest triangle
+        """
+        iteration = 0
+        max_area = 0
+        max_triangle = []
+        max_points = []
+        while iteration < nb_iterations:
+            random_indices = np.random.choice(points.shape[0],3,replace=False)
+            triangle = points[random_indices]
+            area = np.linalg.norm(np.cross(triangle[1]-triangle[0],triangle[2]-triangle[0]))/2
+            if area > max_area:
+                max_area = area
+                max_triangle = triangle
+                max_points = random_indices
+            iteration += 1
+        return points[max_points]
+
+
+    def get_mesh_center(mesh):
+        return np.mean(mesh.vertices, axis=0)
+
+    def are_collinear(coords, tol=None):
+        coords = np.array(coords, dtype=float)
+        coords -= coords[0] # offset for collinear points to intersect the origin
+        return np.linalg.matrix_rank(coords, tol=tol)==1
+
+    def get_envelop_area(points, normal):
+        """
+        Project 3d points to 2d plane and calculate the envelop area
+        """
+        #origin_plane = np.mean(points, axis=0)
+        #find two directions perpendicular to the normal
+        x = np.array([1,0,0])
+        #print(abs(np.dot(x, normal)))
+        if abs(np.dot(x, normal)) >= 0.999:
+            x = np.array([1,1,0])
+        #print("x: ",x)
+        x = x - np.dot(x, normal) * normal
+        print("normal:",normal)
+        print("x: ",x)
+        x /= np.sqrt((x**2).sum())
+        y = np.cross(normal, x)
+        #project the points to the plane
+        projected_points = np.dot(points, np.array([x,y]).T)
+        print("origional points:", points)
+        print("projected points:",projected_points)
+        #check if projected_points are colinear
+        if are_collinear(projected_points):
+            return 0,0
+        #get the envelop area
+        envelop_ch = scipy.spatial.ConvexHull(projected_points)
+        envelop_area = envelop_ch.volume
+        return envelop_area, envelop_ch
+
+    #read iteration_id_to_element_id_map json to dict
+    #iteration_id_to_element_id_map = dict()
+    #with open(f"../result/result_{folder_id}/iteration_id_to_element_id_map.json") as f:
+    #    iteration_id_to_element_id_map = json.load(f)
+
+
+    # read stone meshes
+    #stones_dir = "../data/data_"+folder_id+"/stones/"
+    stone_files = glob.glob(os.path.join(stones_dir, "*stone_*.ply"))
+    pc_element_centers = []
+    element_index_to_stone_id_map = dict()
+    stone_id_to_mesh_map = dict()
+    if len(stone_files) == 0:
+        print("no stone files found")
+    else:
+        for stone_file in stone_files:
+            stone_id = int(stone_file.split("stone_")[1].split(".ply")[0])
+            #iteration = int(stone_file.split("Stone")[1].split("_")[0])
+            stone_mesh = trimesh.load(stone_file)
+            #stone_mesh = pymesh.load_mesh(stone_file)
+            stone_id_to_mesh_map[stone_id] = stone_mesh
+            stone_center = stone_mesh.centroid
+            pc_element_centers.append(stone_center)
+            element_index_to_stone_id_map[len(pc_element_centers)-1] = stone_id
+    #kd tree for element centers
+    pc_element_centers = np.array(pc_element_centers)
+    from scipy.spatial import KDTree
+    element_centers_kd_tree = KDTree(pc_element_centers)
+
+    #iterate stone meshes
+    cand_anta_pairs = []
+    contact_points = dict()
+    for element_index in range(len(element_index_to_stone_id_map.keys())):
+        stone_id = element_index_to_stone_id_map[element_index]
+        element_center = pc_element_centers[element_index]
+        cand_id = stone_id
+        #find the stones in the neightborhood
+        neighbor_indices = element_centers_kd_tree.query_ball_point(element_center, stone_neiborhood_radius)
+        #print("Number of neighbors: ",len(neighbor_indices))
+        neighbor_stone_ids = [element_index_to_stone_id_map[neighbor_index] for neighbor_index in neighbor_indices]
+        #check overlap with all neighbors
+        stone_mesh = stone_id_to_mesh_map[stone_id]
+        for neighbor_k,neighbor_stone_id in enumerate(neighbor_stone_ids):
+            # exclude the stone itself
+            if neighbor_stone_id==stone_id:
+                continue
+            # exclude checked pairs
+            if (stone_id,neighbor_stone_id) in cand_anta_pairs or (neighbor_stone_id,stone_id) in cand_anta_pairs:
+                continue
+            cand_anta_pairs.append((stone_id,neighbor_stone_id))
+            # check overlap
+            neighbor_stone_mesh = stone_id_to_mesh_map[neighbor_stone_id]
+            #find intersection
+            #expanded_stone_mesh = stone_mesh.copy()
+            #expanded_stone_mesh.apply_scale(expand_mesh_scale)
+            #expanded_neighbor_stone_mesh = neighbor_stone_mesh.copy()
+            #expanded_neighbor_stone_mesh.apply_scale(expand_mesh_scale)
+            #intersection = trimesh.boolean.intersection([expanded_stone_mesh,expanded_neighbor_stone_mesh])
+            #print("Checking overlap between ",iteration_id," and ",neighbor_iteration_id)
+            intersection = get_overlap_points(stone_mesh,neighbor_stone_mesh,voxelize_pitch=voxelize_pitch)
+            if len(intersection) == 0 or len(intersection) < 0.5*nb_points_per_intersection:
+                continue
+            #_= get_overlap_points(stone_mesh,neighbor_stone_mesh,plot_voxel=True)
+            
+            #if intersection exists
+            #print("Intersection found")
+            anta_id = neighbor_stone_id
+            neighbor_index = neighbor_indices[neighbor_k]
+            neighbor_center = pc_element_centers[neighbor_index]
+            # export the intersection
+            #intersection.export(f"../result/result_{folder_id}/intersection_{iteration_id}_{neighbor_iteration_id}.ply")
+            #sample points on the intersection
+            #area_intersection = intersection.area
+            #nb_points = int(intersection.area/(sample_intersection_points_radius**2))
+            #intersection_sample_points = trimesh.sample.sample_surface_even(intersection, nb_points,radius = sample_intersection_points_radius)[0]
+            #print(intersection_sample_points)
+            #if len(intersection_sample_points) == 0:
+            #    continue
+            center_of_sample_points = np.mean(intersection, axis=0)
+            #pca on the intersection points using sklearn
+            pca = PCA(n_components=3)
+            pca.fit(intersection)
+            #get three principal components
+            principal_components = pca.components_
+            normal_dir = principal_components[-1]
+            tangent1 = principal_components[0]
+            tangent2 = principal_components[1]
+            intersection_visual = intersection.copy()
+            intersection_visual/=voxelize_pitch
+            #write_points_as_ply(intersection_visual, f"../result/result_{folder_id}/intersection_{iteration_id}_{neighbor_iteration_id}.ply",normal = normal_dir)
+            # #project the intersection to the plane
+            # projected_polygon = intersection.projected(normal = normal_dir,origin = center_of_sample_points)
+            # area_projected_polygon = projected_polygon.area
+            #project the points to the plane
+            envelop_area, envelop_ch = get_envelop_area(intersection,normal_dir)
+            if envelop_area == 0:
+                continue
+            #randomly sample 3 point from intersection_sample_points
+            #choose 3 points that form the largest triangle
+            random_sample_points = get_largest_triangle_points(intersection,1000)
+            random_sample_points_visual = random_sample_points.copy()
+            random_sample_points_visual/=voxelize_pitch
+            #write_points_as_ply(random_sample_points_visual, f"../result/result_{folder_id}/intersection_{iteration_id}_{neighbor_iteration_id}_contps.ply",normal = normal_dir)
+            #a = input(f"overlap detected between {iteration_id} and {neighbor_iteration_id}, continue?")
+            # random_sample_indices = np.random.choice(intersection.shape[0],nb_points_per_intersection, replace=False)
+            # random_sample_points = intersection[random_sample_indices]
+            for sample_point in random_sample_points:
+                section_area = envelop_area*(scale_factor**2)/nb_points_per_intersection
+                # find distance from the node to element center
+                vector_to_element_center = element_center-sample_point
+                proj_dist_to_element_center = np.dot(vector_to_element_center,-normal_dir)
+                thickness = 2*abs(proj_dist_to_element_center)
+                contact_points[contact_point_id] = {"id":contact_point_id, "coordinate":(sample_point*scale_factor).tolist(),\
+                                                        "normal":normal_dir.tolist(),"tangent1":tangent1.tolist(),"tangent2":tangent2.tolist(),\
+                                                            "candidate_id":cand_id,"antagonist_id":anta_id,\
+                                                                "section_area":section_area,"contact_type":stone_to_stone_property["contact_type"],\
+                                                                    "cohesion":stone_to_stone_property["cohesion"],"mu":stone_to_stone_property["mu"],\
+                                                                        "fc":stone_to_stone_property["fc"],"ft":stone_to_stone_property["ft"],\
+                                                                            "face_id":face_id,"E":stone_to_stone_property["E"],"thickness":thickness,\
+                                                                            "counter_point":contact_point_id+1,"Gf1":stone_to_stone_property["Gf1"],\
+                                                                            "Gf2":stone_to_stone_property["Gf2"],"Gc":stone_to_stone_property["Gc"]\
+                                                                            ,"lambda":stone_to_stone_property["lambda"]}
+
+                contact_point_id += 1
+                #add counter point
+                # find distance from the node to element center
+                vector_to_element_center = neighbor_center-sample_point
+                proj_dist_to_element_center = np.dot(vector_to_element_center,normal_dir)
+                thickness = 2*abs(proj_dist_to_element_center)
+                contact_points[contact_point_id] = {"id":contact_point_id, "coordinate":(sample_point*scale_factor).tolist(),\
+                                                        "normal":(-normal_dir).tolist(),"tangent1":tangent1.tolist(),"tangent2":tangent2.tolist(),\
+                                                            "candidate_id":anta_id,"antagonist_id":cand_id,\
+                                                                "section_area":section_area,"contact_type":stone_to_stone_property["contact_type"],\
+                                                                    "cohesion":stone_to_stone_property["cohesion"],"mu":stone_to_stone_property["mu"],\
+                                                                        "fc":stone_to_stone_property["fc"],"ft":stone_to_stone_property["ft"],\
+                                                                            "face_id":face_id,"E":stone_to_stone_property["E"],"thickness":thickness,\
+                                                                            "counter_point":contact_point_id-1,"Gf1":stone_to_stone_property["Gf1"],\
+                                                                            "Gf2":stone_to_stone_property["Gf2"],"Gc":stone_to_stone_property["Gc"]\
+                                                                            ,"lambda":stone_to_stone_property["lambda"]}
+                contact_point_id += 1
+            face_id +=1
+                    
+
+    # write contact points
+    contact_points_file = os.path.join(output_dir, "points_ss.csv")
+    with open(contact_points_file, mode='w') as contact_points_file:
+        contact_points_writer = csv.writer(contact_points_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        contact_points_writer.writerow(["id","x","y","z","nx","ny","nz","t1x","t1y","t1z","t2x","t2y","t2z",\
+            "candidate_id","antagonist_id","section_area","contact_type","cohesion","mu","fc","ft","face_id",\
+                "E","thickness","counter_point","Gf1","Gf2","Gc","lamda"])#"face_id","Gf1","Gf2","Gc","lamda"
+        for contact_point_id in contact_points.keys():
+            contact_point = contact_points[contact_point_id]
+            contact_points_writer.writerow([contact_point["id"],contact_point["coordinate"][0]*scale_factor,contact_point["coordinate"][1]*scale_factor,contact_point["coordinate"][2]*scale_factor,\
+                                            contact_point["normal"][0],contact_point["normal"][1],contact_point["normal"][2],\
+                                                contact_point["tangent1"][0],contact_point["tangent1"][1],contact_point["tangent1"][2],\
+                                                    contact_point["tangent2"][0],contact_point["tangent2"][1],contact_point["tangent2"][2],\
+                                                        contact_point["candidate_id"],contact_point["antagonist_id"],contact_point["section_area"],\
+                                                            contact_point["contact_type"],contact_point["cohesion"],contact_point["mu"],\
+                                                                contact_point["fc"],contact_point["ft"],\
+                                                                    contact_point["face_id"],contact_point["E"],contact_point["thickness"],\
+                                                                        contact_point["counter_point"],contact_point["Gf1"],contact_point["Gf2"],\
+                                                                        contact_point["Gc"],contact_point["lambda"]])
+            
+    
+
 # Command line interface - keep original behavior if run as script
 if __name__ == "__main__":
     if len(sys.argv) < 6:
@@ -540,9 +912,23 @@ if __name__ == "__main__":
     output_dir = sys.argv[5]
     boundary_string = sys.argv[6] if len(sys.argv) > 6 else "double_bending"
     stone_stone_contact = False if sys.argv[7]=="false" else True
+    if not stone_stone_contact:
+        voxelize_pitch = 0
+    else:
+        voxelize_pitch = float(sys.argv[8])
     
     generate_rigid_block_model(material_json_path, mortar_ply_path, stones_dir, mortar_msh_path, output_dir, boundary_string)
     if not stone_stone_contact:
         #rename stone_stone_contact+"point_mortar.csv" to stone_stone_contact+mortar.csv
         points_combined = pd.read_csv(os.path.join(output_dir, "point_mortar.csv"))
         points_combined.to_csv(os.path.join(output_dir, "point.csv"))
+    else:
+        generate_ss_contact(material_json_path, stones_dir, \
+            output_dir, voxelize_pitch = voxelize_pitch)
+        # combine the points_ss.csv with points.csv
+        points_ss = pd.read_csv(os.path.join(output_dir, "points_ss.csv"))
+        points = pd.read_csv(os.path.join(output_dir, "point_mortar.csv"))
+        points_combined = pd.concat([points,points_ss])
+        points_combined.to_csv(os.path.join(output_dir, "point.csv"),index=False)
+    #python /home/qiwang/Projects/28_RBSM_software/software/src/analysis/util_meshing.py /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E4-P/material.json /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E4-P/mortar.ply /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E4-P/temp /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E4-P/mortar_01.msh /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E4-P double_bending true
+    #python /home/qiwang/Projects/28_RBSM_software/software/src/analysis/util_meshing.py /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E3/material.json /home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E3/mortar_01.msh', '/home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E3/temp', '/home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E3/mortar_01.msh', '/home/qiwang/Projects/28_RBSM_software/software/src/workspaces/run_SW3-E3', 'double_bending', 'true'

@@ -67,18 +67,18 @@ def solve_elastic_finitefc_associative_3d(elems, contps, Aglobal=None,thickness_
 
     # result container
     result = dict()
-    # assemble contact faces
-    contfs = dict()
-    for p in tqdm.tqdm(contps.values(), desc='assemble contact faces'):
-        if p.faceID not in contfs.keys():
-            face = ContFace(p.faceID, p.section_h,
-                            p.cont_type.fc, p.cont_type.ft)
-            contfs[face.id] = face
-            contfs[p.faceID].contps.append(p.id)
-        else:
-            contfs[p.faceID].contps.append(p.id)
+    # # assemble contact faces
+    # contfs = dict()
+    # for p in tqdm.tqdm(contps.values(), desc='assemble contact faces'):
+    #     if p.faceID not in contfs.keys():
+    #         face = ContFace(p.faceID, p.section_h,
+    #                         p.cont_type.fc, p.cont_type.ft)
+    #         contfs[face.id] = face
+    #         contfs[p.faceID].contps.append(p.id)
+    #     else:
+    #         contfs[p.faceID].contps.append(p.id)
 
-    nb_contfs = len(contfs)
+    # nb_contfs = len(contfs)
     inf = 0.0
 
     def streamprinter(text):

@@ -45,9 +45,9 @@ model.from_csv(model_dir)
 # --------------------------------------------------------------------
 # Model preprocessing
 # --------------------------------------------------------------------
-for p in model.contps.values():
-    if model.elems[p.cand].type.startswith('mortar'):
-        p.cont_type.E = p.cont_type.E*2
+# for p in model.contps.values():
+#     if model.elems[p.cand].type.startswith('mortar'):
+#         p.cont_type.E = p.cont_type.E*2
 # Recalculate elasticity of interface by conjugating elasticity from two contact bodies
 #model.contps = recalculate_elasticity(model)
 model = compute_fracture_distance(model)

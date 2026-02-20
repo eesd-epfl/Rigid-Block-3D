@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import json
-
 def render(refresh_token: int = 0):
     """Render the Contact Generation tab"""
     #st.header("Contact Point Generation")
@@ -9,16 +8,38 @@ def render(refresh_token: int = 0):
     # ========================================
     # Check if mesh is ready
     # ========================================
+    meshing_from_prev_tab = st.session_state.get('meshing_done', False)
+    if meshing_from_prev_tab:
+        st.success("✅ Mesh is ready for contact generation")
+        work_dir = st.session_state.work_dir
     
-    if not st.session_state.get('meshing_done', False):
-        st.warning("⚠️ Please generate the mesh first (Tab 2: Meshing)")
+        # if not st.session_state.get('meshing_done', False):
+        #     st.warning("⚠️ Please generate the mesh first (Tab 2: Meshing)")
+        #     return
+    
+        # if not st.session_state.get('mesh_output_path'):
+        #     st.error("❌ Mesh file not found. Please regenerate the mesh.")
+        #     return
+    else:
+        st.info("Regenerate contact points from an exising working directory")
+        work_dir = st.session_state.get("work_dir")
+        if not work_dir:
+            st.error("❌ Working directory not set")
+            return
+        
+        st.session_state.output_mesh_path = os.path.join(work_dir, 'mortar.ply')
+        st.session_state.mesh_output_path = os.path.join(work_dir, 'mortar_01.msh')
+        st.session_state.temp_dir = os.path.join(work_dir, "temp")
+
+
+    # Final guard before run
+    if not os.path.exists(os.path.join(work_dir, "mortar_01.msh")) or not os.path.exists(os.path.join(work_dir, "geometry.json")):
+        st.error("Model is incomplete: mortar_01.msh and geometry.json must exist.")
         return
     
-    if not st.session_state.get('mesh_output_path'):
-        st.error("❌ Mesh file not found. Please regenerate the mesh.")
-        return
-    
-    st.success("✅ Mesh is ready for contact generation")
+    # Get geometry info
+    with open(os.path.join(work_dir, "geometry.json"), "r") as f:
+        geometry_data = json.load(f)
     
     st.divider()
     
@@ -76,20 +97,26 @@ def render(refresh_token: int = 0):
             "Force_ground_beam_by_x": True,
         }
         # So make sure wall_dim_x/y/z exist above this block.
-        wall_dim_x = float(st.session_state.get("wall_dim_x", 0.9))
-        wall_dim_y = float(st.session_state.get("wall_dim_y", 0.9))
-        wall_dim_z = float(st.session_state.get("wall_dim_z", 0.2))
+        wall_dim_x = float(geometry_data["wall_dim_x"])
+        wall_dim_y = float(geometry_data["wall_dim_y"])
+        wall_dim_z = float(geometry_data["wall_dim_z"])
+        wall_center_x = float(geometry_data["wall_center"][0])
+        wall_center_y = float(geometry_data["wall_center"][1])
+        wall_center_z = float(geometry_data["wall_center"][2])
         # Derive what util_meshing.py expects:
-        wall_height = float(wall_dim_x)  # your util_meshing uses X as "height"
-        wall_diagonal = float((wall_dim_x**2 + wall_dim_y**2 + wall_dim_z**2) ** 0.5)
+        wall_height = wall_dim_x  # your util_meshing uses X as "height"
+        wall_diagonal = (wall_dim_x**2 + wall_dim_y**2 + wall_dim_z**2) ** 0.5
 
         # Beam/ground interface distance: set a default based on wall size (no UI)
         beam_ground_element_center_to_interface = 0.01
 
         # Wall plane bounds (derived; util_meshing uses these for skipping boundary faces)
-        wall_plane_xs = [0.0, float(wall_dim_x)]
-        wall_plane_ys = [0.0, float(wall_dim_y)]
-        wall_plane_zs = [0.0, float(wall_dim_z)]
+        # wall_plane_xs = [0.0, float(wall_dim_x)]
+        # wall_plane_ys = [0.0, float(wall_dim_y)]
+        # wall_plane_zs = [0.0, float(wall_dim_z)]
+        wall_plane_xs = [wall_center_x-wall_dim_x*0.5, wall_center_x+wall_dim_x*0.5]
+        wall_plane_ys = [wall_center_y-wall_dim_y*0.5, wall_center_y+wall_dim_y*0.5]
+        wall_plane_zs = [wall_center_z-wall_dim_z*0.5, wall_center_z+wall_dim_z*0.5]
 
         # ---------- Tab: Stone ----------
         with mat_property_tabs[0]:
@@ -150,6 +177,20 @@ def render(refresh_token: int = 0):
                 min_value=0.0,
                 step=0.1,
                 key="mu_interface_stone",
+            ))
+            mu_stone_stone = float(st.number_input(
+                "Stone-stone Interface Friction Coefficient μ",
+                value=float(get_value("mu_interface_stone", 0)),
+                min_value=0.0,
+                step=0.1,
+                key="mu_stone_stone",
+            ))
+            cohesion_stone_stone = float(st.number_input(
+                "Stone-stone Interface cohesion",
+                value=float(get_value("mu_interface_stone", 0)),
+                min_value=0.0,
+                step=0.1,
+                key="cohesion_stone_stone",
             ))
 
         # ---------- Tab: Mortar ----------
@@ -313,6 +354,8 @@ def render(refresh_token: int = 0):
 
                 # --- Stone properties (Tab 0) ---
                 "fc_stone": fc_stone,
+                "cohesion_stone_stone":cohesion_stone_stone,
+                "mu_stone_stone":mu_stone_stone,
                 "Emodulus_stone": emodulus_stone,
                 "lambda_stone":lambda_stone,
                 "Density_stone": density_stone,
@@ -379,7 +422,12 @@ def render(refresh_token: int = 0):
         if uploaded_material:
             try:
                 material_data = json.load(uploaded_material)
-                
+                # update 
+                material_data["Wall_height"] = wall_height
+                material_data["Wall_diagonal"] = wall_diagonal
+                material_data["wall_plane_xs"] = wall_plane_xs
+                material_data["wall_plane_ys"]= wall_plane_ys
+                material_data["wall_plane_zs"]= wall_plane_zs
                 # Save to work directory
                 with open(material_json_path, 'w') as f:
                     json.dump(material_data, f, indent=2)
@@ -398,7 +446,7 @@ def render(refresh_token: int = 0):
     # Check prerequisites
     # ========================================
     
-    st.write("**Checking required files...**")
+
     
     mortar_ply_path = st.session_state.get("output_mesh_path")
     stones_dir = st.session_state.get("temp_dir")# use processed stones stored in temp
@@ -452,6 +500,17 @@ def render(refresh_token: int = 0):
     with col2:
         st.write("**Options**")
         stone_stone_contact = st.checkbox("Detect stone-stone contact", value=False)
+        if stone_stone_contact:
+            stone_voxel_pitch = st.number_input(
+                "Voxelize stone mesh with voxel size",
+                min_value=0.001,
+                max_value=1.0,
+                value=0.005,
+                help="Voxel edge length in contact detection",
+                format="%.3f"
+            )
+        else:
+            stone_voxel_pitch = 0.0
         show_progress = st.checkbox("Show detailed progress", value=True)
     
     st.divider()
@@ -501,7 +560,8 @@ def render(refresh_token: int = 0):
                 mortar_msh_path=mesh_path,
                 output_dir=st.session_state.work_dir,
                 boundary_string=boundary_condition,
-                stone_stone_contact=stone_stone_contact_verb
+                stone_stone_contact=stone_stone_contact_verb,
+                stone_voxel_pitch = stone_voxel_pitch
             )
             
             progress_bar.progress(90)

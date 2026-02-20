@@ -428,7 +428,7 @@ def adjust_ft_c(contps):
         # gap_tangent = gap_tangent-gap_tangent_contribution_of_normal_force
         gap_tangent = gap_tangent
         if gap_normal>p.cont_type.ut_ultimate:
-            p.cont_type.ft = 0
+            #p.cont_type.ft = 0
             p.Dt = 1
         elif gap_normal<=p.cont_type.ut_ultimate and gap_normal>p.cont_type.ut_elastic:
             #interpolate
@@ -436,13 +436,13 @@ def adjust_ft_c(contps):
                 (gap_normal-p.cont_type.ut_elastic)/(p.cont_type.ut_ultimate-p.cont_type.ut_elastic))
             # print("p.Dt",p.Dt)
             # a = input("continue?")
-            p.cont_type.ft = p.stored_ft*\
-                (1-p.Dt)
+            #p.cont_type.ft = p.stored_ft*\
+            #    (1-p.Dt)
             #print("p.cont_type.ft",p.cont_type.ft)
         elif gap_normal<=p.cont_type.ut_elastic and gap_normal>=-p.cont_type.uc_elastic:
             p.Dt = max(p.Dt,\
                        0)
-            p.cont_type.ft = p.stored_ft
+            #p.cont_type.ft = p.stored_ft
         elif gap_normal<-p.cont_type.uc_elastic and gap_normal>=-p.cont_type.uc_ultimate:
             #interpolate
             p.Dc = max(p.Dc,\
@@ -453,7 +453,7 @@ def adjust_ft_c(contps):
             p.Dc = 1
             p.cont_type.fc = 0
         
-        p.Ds = max(p.Ds,p.Dt)
+        #p.Ds = max(p.Ds,p.Dt)
 
         # cal_us_elastic_ultimate(p)
         if gap_tangent>p.cont_type.us_ultimate:
@@ -467,7 +467,12 @@ def adjust_ft_c(contps):
         else:
             p.Ds = max(p.Ds,0)
             #p.cont_type.cohesion = p.cont_type.cohesion*(1-p.Ds)
+        max_ds = max(p.Ds,p.Dt)
+        p.Ds = max_ds
+        p.Dt = max_ds
+
         p.cont_type.cohesion = p.stored_cohesion*(1-p.Ds)
+        p.cont_type.ft = p.stored_ft*(1-p.Dt)
 
         # if p.Ds<1:
         #     p.cont_type.mu = 10

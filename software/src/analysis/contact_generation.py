@@ -13,7 +13,8 @@ def generate_contact_points(
     mortar_msh_path: str,
     output_dir: str,
     boundary_string: str = "double_bending",
-    stone_stone_contact: str = "false"
+    stone_stone_contact: str = "false",
+    stone_voxel_pitch:float = 0.005
 ) -> dict:
     """
     Generate contact points and element data for rigid block model.
@@ -41,7 +42,8 @@ def generate_contact_points(
         mortar_msh_path,
         output_dir,
         boundary_string,
-        stone_stone_contact
+        stone_stone_contact,
+        str(stone_voxel_pitch)
     ]
     
     print(f"Running: {' '.join(cmd)}")
