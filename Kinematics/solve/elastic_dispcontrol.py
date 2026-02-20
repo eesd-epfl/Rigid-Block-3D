@@ -133,9 +133,9 @@ def solve_elastic_finitefc_associative_3d_disp_control(elems, contps, Aglobal=No
                     bkc.extend([mosek.boundkey.fx,
                             mosek.boundkey.fx,
                             mosek.boundkey.fx,
-                            mosek.boundkey.fr,
-                            mosek.boundkey.fr,
-                            mosek.boundkey.fr])
+                            mosek.boundkey.fx,
+                            mosek.boundkey.fx,
+                            mosek.boundkey.fx])
                     blc.extend([element.dl[0], element.dl[1], element.dl[2], -inf, -inf, -inf])
                     buc.extend([element.dl[0], element.dl[1], element.dl[2], inf, inf, inf])
                 else:
